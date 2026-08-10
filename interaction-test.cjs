@@ -9,7 +9,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:8899';
   page.on('pageerror', e => errors.push(e.message));
   const out = {};
 
-  await page.goto(BASE + '/index.html#/today', { waitUntil: 'networkidle' });
+  await page.goto(BASE + '/index.html#/tasks', { waitUntil: 'networkidle' });
 
   // 1. 新建任务
   await page.click('[data-action="new-task"]');
@@ -37,7 +37,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:8899';
   await page.click('[data-act="ai-suggest"]');
   await page.waitForTimeout(500);
   const cardText = await page.textContent('#view');
-  out.aiSuggested = cardText.includes('建议归入「候选池与招聘项目」');
+  out.aiSuggested = cardText.includes('建议归入「候选池」');
 
   // 5. 确认归位（会弹确认框）
   await page.click('[data-act="accept"]');
@@ -63,7 +63,7 @@ const BASE = process.env.BASE_URL || 'http://localhost:8899';
   out.searchFound = await page.locator('.result-item').count() > 0;
 
   // 9. 删除确认框出现
-  await page.goto(BASE + '/index.html#/today', { waitUntil: 'networkidle' });
+  await page.goto(BASE + '/index.html#/tasks', { waitUntil: 'networkidle' });
   const doneRow = page.locator('.task-row', { hasText: '交互测试任务甲' });
   out.doneTaskVisible = await doneRow.count() > 0;
   if (out.doneTaskVisible) {

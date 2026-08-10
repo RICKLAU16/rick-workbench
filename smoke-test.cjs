@@ -21,9 +21,9 @@ const SIZES = [
   results.desktop.sidebarVisible = await dpage.isVisible('#sidebar');
   results.desktop.bottomNavHidden = !(await dpage.isVisible('#bottom-nav'));
   results.desktop.title = await dpage.textContent('#topbar-title').catch(() => '(顶栏隐藏)');
-  results.desktop.todayRendered = (await dpage.textContent('#view')).includes('今日');
+  results.desktop.todayRendered = (await dpage.textContent('#view')).includes('工作台');
   // 桌面走查各路由
-  for (const r of ['candidates', 'content', 'tools', 'inbox', 'search', 'ai', 'settings', 'docs', 'changelog', 'more']) {
+  for (const r of ['dashboard', 'tasks', 'candidates', 'content', 'inbox', 'search', 'ai', 'settings', 'docs', 'changelog', 'more']) {
     await dpage.goto(BASE + '/index.html#/' + r, { waitUntil: 'networkidle' });
     await dpage.waitForTimeout(300);
     const len = (await dpage.textContent('#view')).trim().length;

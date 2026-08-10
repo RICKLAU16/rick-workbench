@@ -1,49 +1,35 @@
-// 今日页 + 收集箱 + 快速记录
+// 任务页 + 收集箱 + 快速记录
 import { data, add, update, remove, find, todayStr } from './store.js';
 import { icon } from './icons.js';
 import { esc, toast, openModal, confirmBox, helpBtn, fmtDate, fmtFull } from './ui.js';
 import { suggestFor, todayBrief, aiReady, llmClassify } from './ai.js';
 
-const MODULE_LABELS = { candidates: '候选池', content: '内容', tools: '工具', none: '独立任务' };
+const MODULE_LABELS = { candidates: '招聘', content: '内容', none: '独立任务' };
 const STATUS_LABELS = { todo: '待办', doing: '进行中', confirm: '待确认', done: '已完成' };
 
-export function renderToday(view) {
+const rerender = () => import('./app.js').then(m => m.renderCurrent());
+
+// ============ 任务页 ============
+export function renderTasks(view) {
   const d = data();
   const today = todayStr();
   const open = d.tasks.filter(t => t.status !== 'done');
   const overdue = open.filter(t => t.due && t.due < today);
   const confirmList = open.filter(t => t.status === 'confirm');
   const dueToday = open.filter(t => t.due === today && t.status !== 'confirm');
-  const recent = [...open].filter(t => !overdue.includes(t) && !confirmList.includes(t) && !dueToday.includes(t))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5);
-  const doneToday = d.tasks.filter(t => t.status === 'done' && (t.updatedAt || '').slice(0, 10) === today).length;
+  const noDue = open.filter(t => !t.due && t.status !== 'confirm');
   const doneList = d.tasks.filter(t => t.status === 'done').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
-  const week = ['日', '一', '二', '三', '四', '五', '六'][new Date().getDay()];
-
   view.innerHTML = `
-    <div class="today-hero">
-      <div class="date">${fmtFull(today)} · 星期${week}</div>
-      <div class="headline">${esc(todayBrief())}</div>
-      <div class="today-stats">
-        <span class="today-stat${overdue.length ? ' warn' : ''}"><b>${overdue.length}</b>逾期</span>
-        <span class="today-stat${confirmList.length ? ' warn' : ''}"><b>${confirmList.length}</b>待确认</span>
-        <span class="today-stat"><b>${dueToday.length}</b>今日到期</span>
-        <span class="today-stat"><b>${doneToday}</b>今日已完成</span>
-      </div>
-    </div>
-    <div class="page-head" style="margin-top:20px">
-      <h2>今日</h2>${helpBtn('today')}
-      <div class="spacer"></div>
-      <button class="btn primary" data-action="new-task">${icon('plus')}新建任务</button>
-    </div>
+    <div class="page-head"><h2>任务</h2>${helpBtn('today')}<div class="spacer"></div>
+      <button class="btn primary" data-action="new-task">${icon('plus')}新建任务</button></div>
     ${taskSection('已逾期', overdue, 'warn')}
     ${taskSection('待确认', confirmList)}
     ${taskSection('今日到期', dueToday)}
-    ${taskSection('可以继续', recent)}
+    ${taskSection('进行中', noDue)}
     ${taskSection('已完成', doneList)}
-    ${!overdue.length && !confirmList.length && !dueToday.length && !recent.length ? `
-      <div class="empty">${icon('today')}<p>今天没有待办。新建一条任务，或到各模块看看有什么能推进的。</p>
+    ${!open.length && !doneList.length ? `
+      <div class="empty">${icon('today')}<p>没有任务。新建一条，或到仪表盘看看。</p>
       <button class="btn primary" data-action="new-task">${icon('plus')}新建任务</button></div>` : ''}
   `;
 
@@ -59,7 +45,7 @@ function taskSection(title, list, tone) {
 }
 
 function taskRow(t) {
-  const linked = t.linkedTo ? find('candidates', t.linkedTo) || find('projects', t.linkedTo) || find('contents', t.linkedTo) || find('tools', t.linkedTo) : null;
+  const linked = t.linkedTo ? find('candidates', t.linkedTo) || find('projects', t.linkedTo) : null;
   const done = t.status === 'done';
   return `
     <div class="task-row" data-id="${t.id}">
@@ -90,7 +76,7 @@ function bindTaskRows(view) {
     };
     row.querySelector('[data-act="edit"]').onclick = () => taskForm(find('tasks', id));
     row.querySelector('[data-act="del"]').onclick = async () => {
-      const ok = await confirmBox('删除任务', '删除后不可恢复。如果只是想标记完成，点左侧圆圈即可。', { danger: true, okText: '删除' });
+      const ok = await confirmBox('删除任务', '删除后不可恢复。', { danger: true, okText: '删除' });
       if (ok) { remove('tasks', id); toast('已删除'); rerender(); }
     };
     const linkBtn = row.querySelector('[data-act="go-link"]');
@@ -98,11 +84,6 @@ function bindTaskRows(view) {
   });
 }
 
-function rerender() {
-  import('./app.js').then(m => m.renderCurrent());
-}
-
-// 任务表单（新建/编辑共用）
 export function taskForm(task = null, presetModule = 'none') {
   const t = task || { title: '', module: presetModule, status: 'todo', due: '', linkedTo: '' };
   const d = data();
@@ -110,15 +91,13 @@ export function taskForm(task = null, presetModule = 'none') {
     ...d.candidates.filter(c => !c.deleted).map(c => `<option value="${c.id}" ${t.linkedTo === c.id ? 'selected' : ''}>候选人 · ${esc(c.name)}</option>`),
     ...d.projects.map(p => `<option value="${p.id}" ${t.linkedTo === p.id ? 'selected' : ''}>项目 · ${esc(p.name)}</option>`),
     ...d.contents.map(c => `<option value="${c.id}" ${t.linkedTo === c.id ? 'selected' : ''}>内容 · ${esc(c.title)}</option>`),
-    ...d.tools.map(x => `<option value="${x.id}" ${t.linkedTo === x.id ? 'selected' : ''}>工具 · ${esc(x.name)}</option>`),
   ].join('');
   const { close, el } = openModal(task ? '编辑任务' : '新建任务', `
-    <div class="field"><label>标题</label><input type="text" name="title" value="${esc(t.title)}" placeholder="要做什么事"></div>
+    <div class="field"><label>标题</label><input type="text" name="title" value="${esc(t.title)}"></div>
     <div class="field"><label>归属模块</label><select name="module">
       <option value="none" ${t.module === 'none' ? 'selected' : ''}>独立任务</option>
-      <option value="candidates" ${t.module === 'candidates' ? 'selected' : ''}>候选池与招聘项目</option>
+      <option value="candidates" ${t.module === 'candidates' ? 'selected' : ''}>招聘</option>
       <option value="content" ${t.module === 'content' ? 'selected' : ''}>内容创作</option>
-      <option value="tools" ${t.module === 'tools' ? 'selected' : ''}>工具与 Skill 开发</option>
     </select></div>
     <div class="field"><label>状态</label><select name="status">
       ${Object.entries(STATUS_LABELS).map(([k, v]) => `<option value="${k}" ${t.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -141,13 +120,13 @@ export function taskForm(task = null, presetModule = 'none') {
     };
     if (task) { update('tasks', task.id, patch); toast('已保存'); }
     else { add('tasks', patch); toast('已新建任务'); }
-    close();
-    rerender();
+    close(); rerender();
   };
 }
 
 // ============ 收集箱 ============
 const KIND_LABELS = { text: '文字', link: '链接', task: '临时任务', file: '文件' };
+const RULE_LABEL = { candidates: '候选池', content: '内容创作', tasks: '任务' };
 
 export function renderInbox(view) {
   const d = data();
@@ -172,7 +151,7 @@ export function renderInbox(view) {
       if (ok) { update('inbox', item.id, { status: 'archived' }); toast('已归档'); rerender(); }
     });
     card.querySelector('[data-act="del"]')?.addEventListener('click', async () => {
-      const ok = await confirmBox('删除这条记录', '删除后不可恢复，搜索也找不到。', { danger: true, okText: '删除' });
+      const ok = await confirmBox('删除这条记录', '删除后不可恢复。', { danger: true, okText: '删除' });
       if (ok) { remove('inbox', item.id); toast('已删除'); rerender(); }
     });
   });
@@ -206,8 +185,6 @@ function inboxCard(item) {
       </div>
     </div>`;
 }
-
-const RULE_LABEL = { candidates: '候选池与招聘项目', content: '内容创作', tools: '工具与 Skill 开发', tasks: '今日任务' };
 
 async function aiSuggest(id, card) {
   const item = find('inbox', id);
@@ -243,11 +220,9 @@ async function acceptSuggestion(id) {
   if (to === 'tasks') {
     add('tasks', { title: item.content, module: 'none', status: 'todo', due: '', linkedTo: null });
   } else if (to === 'candidates') {
-    add('projects', { name: item.content.slice(0, 40), type: '其他', status: '待评估', version: '', note: item.content, links: [] });
+    add('projects', { name: item.content.slice(0, 40), type: '其他', status: '待评估', version: '', note: item.content, links: [], phases: [] });
   } else if (to === 'content') {
     add('contents', { title: item.content.slice(0, 40), platform: '公众号', stage: '选题', publishDate: '', note: item.content, links: [] });
-  } else if (to === 'tools') {
-    add('tools', { name: item.content.slice(0, 40), version: '', status: '想法', note: item.content, links: [], history: [] });
   }
   update('inbox', id, { status: 'sorted' });
   toast(`已归入「${RULE_LABEL[to]}」`);
